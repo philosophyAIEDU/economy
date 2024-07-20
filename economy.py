@@ -1,6 +1,7 @@
 import streamlit as st
 from openai import OpenAI
 import time
+import tempfile
 
 # Streamlit 페이지 설정
 st.set_page_config(page_title="나만의 경제분석팀", page_icon="🤖")
@@ -11,6 +12,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = None
+if "file_id" not in st.session_state:
+    st.session_state.file_id = None
 
 # 고정된 Assistant ID
 ASSISTANT_ID = "asst_vX3J0soVFiSe4IMCkRGYr7Cu"
@@ -26,6 +29,21 @@ if api_key:
         thread = client.beta.threads.create()
         st.session_state.thread_id = thread.id
 
+    # 파일 업로드
+    uploaded_file = st.file_uploader("파일을 업로드하세요", type=["txt", "pdf", "csv"])
+    if uploaded_file is not None:
+        # 임시 파일 생성
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            tmp_file_path = tmp_file.name
+
+        # OpenAI에 파일 업로드
+        with open(tmp_file_path, "rb") as file:
+            file_obj = client.files.create(file=file, purpose="assistants")
+        
+        st.session_state.file_id = file_obj.id
+        st.success(f"파일이 성공적으로 업로드되었습니다. (File ID: {file_obj.id})")
+
     # 사용자 입력
     user_input = st.text_input("메시지를 입력하세요:")
 
@@ -40,7 +58,8 @@ if api_key:
         # 실행
         run = client.beta.threads.runs.create(
             thread_id=st.session_state.thread_id,
-            assistant_id=ASSISTANT_ID
+            assistant_id=ASSISTANT_ID,
+            tools=[{"type": "retrieval"}]  # 파일 검색 도구 활성화
         )
 
         # 응답 대기
@@ -51,7 +70,7 @@ if api_key:
                     thread_id=st.session_state.thread_id,
                     run_id=run.id
                 )
-            
+
             if run.status == "failed":
                 st.error("답변 생성에 실패했습니다. 다시 시도해 주세요.")
             else:
